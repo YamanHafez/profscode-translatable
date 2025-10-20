@@ -1,0 +1,23 @@
+{
+    "name": "profscode/translatable",
+    "description": "File-based translatable package with versioning for Laravel",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Profscode\\Translatable\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Yaman Hafez",
+            "email": "yaman@profscode.com"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11.0"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
