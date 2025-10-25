@@ -8,6 +8,13 @@
             "Profscode\\Translatable\\": "src/"
         }
     },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Profscode\\Translatable\\TranslatableServiceProvider"
+            ]
+        }
+    },
     "authors": [
         {
             "name": "Yaman Hafez",
