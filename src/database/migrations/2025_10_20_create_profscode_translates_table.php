@@ -9,10 +9,12 @@ return new class extends Migration {
     {
         Schema::create('profscode_translates', function (Blueprint $table) {
             $table->id();
-            $table->morphs('translatable');
+            $table->uuid('translatable_id');
+            $table->string('translatable_type');
             $table->string('locale', 5);
             $table->string('key');
             $table->longText('value')->nullable();
+            $table->index(["translatable_id", "translatable_type"]);
             $table->timestamps();
         });
     }

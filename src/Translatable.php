@@ -4,83 +4,168 @@ namespace Profscode\Translatable;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
+use Profscode\Translatable\Models\ProfscodeTranslate;
 
 trait Translatable
 {
+    protected $_tempFileName;
+
     public static function bootTranslatable()
     {
         static::saving(function (Model $model) {
-            $class = class_basename($model);
-            foreach ($model->getTranslatableAttributes() as $attribute) {
-                $model->{$attribute} = $class;
-            }
-        });
-        static::saved(function (Model $model) {
+
+            $fileName = $model->getKey() ?: Str::uuid()->toString();
+
+            $model->_tempFileName = $fileName;
 
             foreach ($model->getTranslatableAttributes() as $attribute) {
-                $requestValues = $model->getAttributes();
-                $value = $requestValues[$attribute] ?? null;
-                if (is_array($value)) {
-                    foreach ($value as $locale => $translation) {
-                        self::saveToLangFile($model, $attribute, $translation, $locale);
+
+                $value = $model->attributes[$attribute] ?? null;
+
+                if (is_string($value)) {
+                    $decoded = json_decode($value, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $value = $decoded;
                     }
                 }
+
+                if (!is_array($value)) {
+                    continue;
+                }
+
+                foreach ($value as $locale => $translation) {
+                    self::saveToLangFile($model, $attribute, $translation, $locale, $fileName);
+                    self::saveToDatabase($model, $attribute, $translation, $locale, $fileName);
+                }
+
+                $model->attributes[$attribute] = $fileName;
             }
+        });
+
+        static::saved(function (Model $model) {
+
+            if ($model->wasRecentlyCreated) {
+
+                $oldID = $model->_tempFileName;
+                $newID = $model->getKey();
+
+                if ($oldID && $newID && $oldID !== $newID) {
+                    self::changeFileName($model, $oldID, $newID);
+                }
+            }
+
         });
     }
 
-    public function getTranslatableAttributes(): array
+    public function __get($key)
     {
-        return property_exists($this, 'translatable') ? $this->translatable : [];
+        if (in_array($key, $this->getTranslatableAttributes())) {
+
+            $translated = $this->getTranslation($key);
+
+            if ($translated !== null) {
+                return $translated;
+            }
+
+            return parent::__get($key);
+        }
+
+        return parent::__get($key);
     }
 
-    protected static function saveToLangFile(Model $model, string $key, string $value, string $locale): void
+    public function getTranslation(string $key, string $locale = null): ?string
+    {
+        $locale = $locale ?? app()->getLocale();
+        $class = class_basename($this);
+        $fileID = $this->getKey();
+        if (!$fileID) {
+            return null;
+        }
+
+        $path = lang_path("$locale/$class/$fileID.php");
+
+        if (File::exists($path)) {
+            $translations = include $path;
+            return $translations[$key] ?? null;
+        }
+
+        return $this->getKey() . " " . $key;
+    }
+
+    protected static function saveToDatabase(Model $model, string $key, string $value, string $locale, $id): void
+    {
+        ProfscodeTranslate::updateOrCreate(
+            [
+                'translatable_type' => get_class($model),
+                'translatable_id' => $id,
+                'locale' => $locale,
+                'key' => $key,
+            ],
+            [
+                'value' => $value,
+            ]
+        );
+    }
+
+    protected static function saveToLangFile(Model $model, string $key, string $value, string $locale, string $fileName): void
     {
         $class = class_basename($model);
-        $id = $model->getKey() ?? 'new';
-        dd($id, $model);
         $dir = lang_path("$locale/$class");
-        $path = "$dir/$id.php";
+        $path = "$dir/$fileName.php";
 
         if (!File::isDirectory($dir)) {
             File::makeDirectory($dir, 0755, true);
         }
 
-        $translations = [];
-        if (File::exists($path)) {
-            $translations = include $path;
-        }
+        $translations = File::exists($path) ? include $path : [];
 
         if (isset($translations[$key]) && $translations[$key] !== $value) {
+
             $i = 1;
+
             while (isset($translations["{$key}_old{$i}"])) {
                 $i++;
             }
+
             $translations["{$key}_old{$i}"] = $translations[$key];
         }
 
         $translations[$key] = $value;
 
         $export = "<?php\n\nreturn " . var_export($translations, true) . ";\n";
+
         File::put($path, $export);
     }
 
-    /**
-     * Dosyadan çeviri çek
-     */
-    public function getTranslation(string $key, string $locale = null): ?string
+    protected static function changeFileName(Model $model, $oldID, $newID)
     {
-        $locale = $locale ?? app()->getLocale();
-        $class = class_basename($this);
-        $id = $this->getKey();
-        $path = lang_path("$locale/$class/$id.php");
+        $class = class_basename($model);
+        $locales = scandir(lang_path());
 
-        if (!File::exists($path)) {
-            return null;
+        foreach ($locales as $loc) {
+
+            if ($loc === '.' || $loc === '..') {
+                continue;
+            }
+
+            $dir = lang_path("$loc/$class");
+            $oldPath = "$dir/$oldID.php";
+            $newPath = "$dir/$newID.php";
+
+            if (file_exists($oldPath)) {
+                rename($oldPath, $newPath);
+            }
         }
+        ProfscodeTranslate::where('translatable_id', $oldID)
+            ->update(['translatable_id' => $newID]);
 
-        $translations = include $path;
+    }
 
-        return $translations[$key] ?? null;
+    public function getTranslatableAttributes(): array
+    {
+        return property_exists($this, 'translatable')
+            ? $this->translatable
+            : [];
     }
 }
