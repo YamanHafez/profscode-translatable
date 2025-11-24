@@ -14,7 +14,6 @@ trait Translatable
     public static function bootTranslatable()
     {
         static::saving(function (Model $model) {
-
             $fileName = $model->getKey() ?: Str::uuid()->toString();
 
             $model->_tempFileName = $fileName;
@@ -35,8 +34,10 @@ trait Translatable
                 }
 
                 foreach ($value as $locale => $translation) {
-                    self::saveToLangFile($model, $attribute, $translation, $locale, $fileName);
-                    self::saveToDatabase($model, $attribute, $translation, $locale, $fileName);
+                    if (!is_null($translation)) {
+                        self::saveToLangFile($model, $attribute, $translation, $locale, $fileName);
+                        self::saveToDatabase($model, $attribute, $translation, $locale, $fileName);
+                    }
                 }
 
                 $model->attributes[$attribute] = $fileName;
